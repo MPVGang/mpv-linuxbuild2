@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+        uses: actions/setup-python@v1
+        uses: BSFishy/meson-build@v1.0.3
 
       - name: Set options
         run: echo "--enable-gl-x11 --disable-drm --enable-libmpv-shared" > mpv_options
