@@ -2,10 +2,6 @@ name: Build deb packages
 
 on: 
   workflow_dispatch:
-    inputs:
-      mpv_version:
-        description: 'release or master'
-        default: 'release'
 
 jobs:
   build:
