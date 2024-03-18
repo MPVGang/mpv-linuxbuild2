@@ -1,0 +1,117 @@
+name: Build deb packages
+
+on: 
+  workflow_dispatch:
+    inputs:
+      mpv_version:
+        description: 'release or master'
+        default: 'release'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          #- { name: 'xenial', os: 'ubuntu-latest', container: 'wachii/ubuntu-qt:16.04' }
+          #- { name: 'bionic', os: 'ubuntu-18.04', container: '' }
+          #- { name: 'focal', os: 'ubuntu-20.04', container: '' }
+          - { name: 'jammy', os: 'ubuntu-22.04', container: '' }
+          
+    runs-on: ${{ matrix.config.os }}
+    container: ${{ matrix.config.container }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install devscripts
+        run: |
+            sudo apt-get -y update
+            sudo apt-get -y install devscripts equivs nasm
+      
+      - name: Remove unavailable dependencies
+        run: |
+            sed -i '/libdav1d-dev/d' debian/control
+            sed -i '/enable-libdav1d/d' debian/rules
+            
+      - name: Use openssl
+        run: |
+            sed -e 's/libgnutls-dev | libgnutls28-dev/libssl-dev/' -i debian/control
+            sed -e 's/--enable-gnutls/--enable-openssl/' -i debian/rules
+            sed -e 's/--enable-gpl/--enable-nonfree/' -i debian/rules
+            
+      #- name: Add mpv-tests repository
+      #  run: |
+      #      sudo add-apt-repository ppa:mc3man/mpv-tests --yes
+      #      sudo apt-get update
+      #  if: ${{ false }}
+
+      - name: Install build dependencies
+        run: |
+            mk-build-deps
+            #ls *.deb
+            #dpkg --info ./mpv-build-deps*.deb
+            sudo apt-get -y install ./mpv-build-deps*.deb --no-install-recommends
+            
+      - name: Downgrade openssl and libssl-dev (xenial)
+        #if: ${{ matrix.config.name == 'xenial' }}
+        if: ${{ false }}
+        run: |
+            sudo apt-get install -y --allow-downgrades openssl=1.0.2g-1ubuntu4.19 libssl-dev=1.0.2g-1ubuntu4.19
+            dpkg -l openssl libssl-dev | grep '^ii' | cut -c5-
+
+      - name: Set options
+        run: echo "--enable-gl-x11 --disable-drm --enable-libmpv-shared" > mpv_options
+
+      - name: Configure sources (release)
+        if: ${{ github.event.inputs.mpv_version == 'release'}}
+        run: |
+            ./use-ffmpeg-release
+            ./use-libass-custom 0.15.0
+ 
+      - name: Configure sources (master)
+        if: ${{ github.event.inputs.mpv_version == 'master'}}
+        run: |
+            ./use-ffmpeg-master
+            ./use-libass-master
+            
+      - name: Use old libass for xenial
+        if: ${{ matrix.config.name == 'xenial' }}
+        run: |
+            ./use-libass-custom 0.14.0
+            #./use-libass-custom 30bd3d34d32cebeb7b1af6b9e77f617ef1d2bb9a
+     
+      - name: Use mpv release
+        run: ./use-mpv-release
+        if: ${{ github.event.inputs.mpv_version == 'release'}}
+      
+      - name: Use mpv master
+        run: ./use-mpv-master
+        if: ${{ github.event.inputs.mpv_version == 'master'}}
+
+      - name: Update sources
+        run: ./update
+
+      - name: Get version
+        shell: bash
+        run: |
+            VERSION=`dpkg-parsechangelog --show-field Version`
+            VERSION="${VERSION/*:/}"
+            echo "MPV_VERSION=$VERSION" >> $GITHUB_ENV
+
+      #- name: Patch
+      #  if: ${{ matrix.config.name == 'xenial' }}
+      #  run: sed -e 's/scripts\//GCJFLAGS="" CFLAGS="" CXXFLAGS="" CPPFLAGS="" FFLAGS="" LDFLAGS="" FCFLAGS="" OBJCXXFLAGS="" OBJCFLAGS="" scripts\//' -i debian/rules
+
+      - name: Compile and build
+        run: |
+            dpkg-buildpackage -uc -us -b -j4
+            mv ../mpv_*.deb .
+            ls -l mpv_*.deb
+        
+      - name: Create artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: mpv-${{ env.MPV_VERSION }}-${{ github.event.inputs.mpv_version }}
+          path: ./mpv_*.deb
