@@ -23,7 +23,7 @@ jobs:
       - name: Python
         uses: actions/setup-python@v1
       - name: meson
-        uses: BSFishy/meson-build@v1.0.3
+        run: python -m pip install meson
 
       - name: Set options
         run: echo "--enable-gl-x11 --disable-drm --enable-libmpv-shared" > mpv_options
